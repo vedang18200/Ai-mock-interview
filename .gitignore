@@ -1,0 +1,19 @@
+# Ignore environment files
+.env
+
+# Ignore compiled files
+__pycache__/
+*.pyc
+*.pyo
+
+# Ignore IDE and OS-specific files
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Ignore virtual environment
+venv/
+
+# Ignore Firebase credentials
+serviceaccountkey.json
+V:/Mock interview/serviceaccountkey.json

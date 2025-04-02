@@ -1,15 +1,12 @@
-import json
-import requests
+from dotenv import load_dotenv
+import os
 
-url = "https://ai-based-mock-interviewe-64e51-default-rtdb.firebaseio.com/mock_interviews.json"
+load_dotenv()
 
-response = requests.get(url)
+GEMINI_API_KEY = os.getenv("URL")
 
-# Debugging step: Print the response text
-print("Raw Response:", response.text)
-
-try:
-    data = response.json()  # Try to decode JSON
-    print("Decoded Data:", data)
-except json.decoder.JSONDecodeError:
-    print("Error: Response is not valid JSON!")
+# Check if the API key is loaded
+if GEMINI_API_KEY:
+    print("GEMINI_API_KEY loaded successfully:", GEMINI_API_KEY[:5] + "****")  # Masking for security
+else:
+    print("Failed to load GEMINI_API_KEY")

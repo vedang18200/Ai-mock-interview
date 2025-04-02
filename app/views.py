@@ -23,8 +23,13 @@ import json
 import requests
 from django.core.exceptions import ObjectDoesNotExist
 # Load Gemini API key from settings
-GEMINI_API_KEY = "AIzaSyBa6y10WFEQu2SDoLACcHKo86tzfhNetaQ"
-GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1/models/gemini-1.5-pro-002:generateContent"
+
+from dotenv import load_dotenv
+import os
+
+load_dotenv()
+GEMINI_API_KEY = os.getenv("KEY")
+GEMINI_API_URL = os.getenv("URL")
 
 def login_view(request):
     if request.user.is_authenticated:
@@ -354,7 +359,11 @@ from firebase_admin import credentials, firestore
 # Check if Firebase is already initialized
 if not firebase_admin._apps:
     print("Initializing Firebase...")
-    cred = credentials.Certificate("V:\Mock interview\serviceaccountkey.json")  # Correct path to your JSON key
+    load_dotenv()
+
+    # Get the path from .env
+    cred_path = os.getenv("FIREBASE_CREDENTIALS_PATH")
+    cred = credentials.Certificate( cred_path)  
     firebase_admin.initialize_app(cred)
 else:
     print("Firebase is already initialized.")
