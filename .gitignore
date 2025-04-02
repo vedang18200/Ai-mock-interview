@@ -11,9 +11,6 @@ __pycache__/
 .DS_Store
 Thumbs.db
 
-# Ignore virtual environment
-venv/
-
 # Ignore Firebase credentials
 serviceaccountkey.json
 V:/Mock interview/serviceaccountkey.json
