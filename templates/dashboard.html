@@ -6,6 +6,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AI Mock Interview Dashboard</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Firebase SDK Libraries -->
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
 </head>
 
 <body class="bg-gray-900 text-white">
@@ -83,7 +87,7 @@
             </section>
             
             <script>
-                // Firebase SDK (Ensure it's included in your HTML)
+                // Firebase SDK Configuration
                 const firebaseConfig = {
                     apiKey: "AIzaSyBGZXOvtqvunHecvk1qOr_XXxpSCRSPgWw",
                     authDomain: "mock-interview-453407.firebaseapp.com",
@@ -103,7 +107,14 @@
                     const interviewList = document.getElementById("interview-list");
                     interviewList.innerHTML = "<p class='text-gray-400'>Loading interviews...</p>";
 
-                    db.collection("interviews").get().then((querySnapshot) => {
+                    // Get current user email from Django template
+                    const currentUser = "{{ user.email }}";
+                    
+                    db.collection("interviews")
+                      .where("user_email", "==", currentUser) // Filter by current user
+                      .orderBy("timestamp", "desc") // Sort by timestamp, newest first
+                      .get()
+                      .then((querySnapshot) => {
                         interviewList.innerHTML = ""; // Clear previous content
 
                         if (querySnapshot.empty) {
@@ -114,41 +125,66 @@
                         querySnapshot.forEach((doc) => {
                             const interview = doc.data();
                             const interviewId = doc.id;
+                            
+                            // Format the timestamp if it exists
+                            let dateDisplay = "";
+                            if (interview.timestamp && interview.timestamp.toDate) {
+                                const date = interview.timestamp.toDate();
+                                dateDisplay = new Date(date).toLocaleString();
+                            }
 
                             let div = document.createElement("div");
                             div.className = "p-4 border-b border-gray-700 flex justify-between items-center";
                             div.innerHTML = `
                                 <div>
-                                    <h3 class="text-lg font-bold text-white">${interview.role}</h3>
-                                    <p class="text-gray-400">Score: ${interview.score ? interview.score : "N/A"} / 10</p>
+                                    <h3 class="text-lg font-bold text-white">${interview.role || "Unknown Role"}</h3>
+                                    <p class="text-gray-400">Score: ${interview.score || "N/A"}</p>
+                                    ${dateDisplay ? `<p class="text-gray-500 text-sm">${dateDisplay}</p>` : ''}
                                 </div>
-                                <button onclick="deleteInterview('${interviewId}')"
-                                    class="bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-4 rounded">
-                                    Delete
-                                </button>
+                                <div class="flex space-x-2">
+                                    <button onclick="retakeInterview('${interviewId}')"
+                                        class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded">
+                                        Retake
+                                    </button>
+                                    <button onclick="deleteInterview('${interviewId}')"
+                                        class="bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-4 rounded">
+                                        Delete
+                                    </button>
+                                </div>
                             `;
                             interviewList.appendChild(div);
                         });
                     }).catch((error) => {
                         console.error("Error fetching interviews:", error);
-                        interviewList.innerHTML = "<p class='text-red-500'>Failed to load interviews.</p>";
+                        interviewList.innerHTML = `<p class='text-red-500'>Failed to load interviews: ${error.message}</p>`;
                     });
                 }
-                
-                
                 
                 function deleteInterview(interviewId) {
                     if (!confirm("Are you sure you want to delete this interview?")) return;
                 
-                    db.collection("interviews").doc(interviewId).delete()
-                        .then(() => {
-                            console.log("Interview deleted successfully.");
-                        })
-                        .catch((error) => {
-                            console.error("Error deleting interview:", error);
-                        });
+                    // Send delete request to the Django backend
+                    fetch(`/api/delete-interview/${interviewId}/`, {
+                        method: "DELETE",
+                        headers: {
+                            "X-CSRFToken": getCSRFToken(),
+                            "Content-Type": "application/json"
+                        },
+                        credentials: "include"
+                    })
+                    .then(response => {
+                        if (response.ok) {
+                            // Refresh the interviews list
+                            loadInterviews();
+                        } else {
+                            alert("Failed to delete interview.");
+                        }
+                    })
+                    .catch(error => {
+                        console.error("Error deleting interview:", error);
+                        alert("An error occurred.");
+                    });
                 }
-                
 
                 function deleteAllInterviews() {
                     if (!confirm("Are you sure you want to delete all interviews? This action cannot be undone!")) return;
@@ -164,7 +200,7 @@
                     .then(response => response.json())
                     .then(data => {
                         if (data.message === "All interviews deleted successfully") {
-                            document.getElementById("interview-list").innerHTML = "<p class='text-gray-400'>No interviews found.</p>";
+                            loadInterviews(); // Refresh the list
                         } else {
                             alert("Failed to delete interviews.");
                         }
@@ -175,13 +211,23 @@
                     });
                 }
                 
-                
-                
-                
-
-            function retakeInterview(interviewId) {
-                window.location.href = `/interview/?id=${interviewId}`;
-            }
+                function retakeInterview(interviewId) {
+                    // Get interview data from Firestore first
+                    db.collection("interviews").doc(interviewId).get()
+                        .then((doc) => {
+                            if (doc.exists) {
+                                const interview = doc.data();
+                                // Navigate to interview page with role, description and experience
+                                window.location.href = `/interview/?role=${encodeURIComponent(interview.role || '')}&description=${encodeURIComponent(interview.description || '')}&experience=${encodeURIComponent(interview.experience || '1')}&retake=true`;
+                            } else {
+                                alert("Interview not found.");
+                            }
+                        })
+                        .catch((error) => {
+                            console.error("Error getting interview:", error);
+                            alert("Failed to retrieve interview details.");
+                        });
+                }
             </script>
         </div>
     </main>
@@ -250,43 +296,8 @@
             }
         });
 
-        // Function to fetch and display past interviews from Firestore
-        function loadInterviews() {
-            const interviewList = document.getElementById("interview-list");
-            interviewList.innerHTML = "<p class='text-gray-400'>Loading interviews...</p>";
-
-            db.collection("interviews").onSnapshot((snapshot) => {
-                interviewList.innerHTML = "";
-
-                if (snapshot.empty) {
-                    interviewList.innerHTML = "<p class='text-gray-400'>No interviews found.</p>";
-                    return;
-                }
-
-                snapshot.forEach((doc) => {
-                    const interview = doc.data();
-                    const interviewId = doc.id;
-
-                    let div = document.createElement("div");
-                    div.className = "p-4 border-b border-gray-700 flex justify-between items-center";
-                    div.innerHTML = `
-                        <div>
-                            <h3 class="text-lg font-bold text-white">${interview.role}</h3>
-                            <p class="text-gray-400">Score: ${interview.score ? interview.score : "N/A"} / 10</p>
-                        </div>
-                        <button onclick="deleteInterview('${interviewId}')"
-                            class="bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-4 rounded">
-                            Delete
-                        </button>
-                    `;
-                    interviewList.appendChild(div);
-                });
-            });
-        }
-
+        // Load interviews when page loads
         document.addEventListener("DOMContentLoaded", loadInterviews);
     </script>
-
-
 </body>
 </html>

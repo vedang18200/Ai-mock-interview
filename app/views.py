@@ -129,15 +129,32 @@ def result_view(request):
 
 
 
-
-
-
-
 @login_required
 def dashboard_view(request):
-    """Fetch user's past interviews & display on the dashboard."""
-    past_interviews = Interview.objects.filter(user=request.user).order_by('-created_at')
-    return render(request, "dashboard.html", {"past_interviews": past_interviews})
+    """Fetch user's past interviews from Firestore & display on the dashboard."""
+    try:
+        # Get the current user's email or username as identifier
+        user_identifier = request.user.email
+        
+        # Query Firestore for this user's interviews
+        interviews_ref = db.collection("interviews")
+        # Note: You might need to adjust this query depending on how you're storing user info
+        # This assumes you've added a 'user_email' field to your Firestore documents
+        interviews = interviews_ref.where("user_email", "==", user_identifier).get()
+        
+        past_interviews = []
+        for doc in interviews:
+            interview_data = doc.to_dict()
+            interview_data['id'] = doc.id  # Add the document ID
+            past_interviews.append(interview_data)
+        
+        # Sort by timestamp (newest first) if timestamp exists
+        interviews = interviews_ref.where("user_email", "==", user_identifier).order_by("timestamp", direction=firestore.Query.DESCENDING).get()
+        
+        return render(request, "dashboard.html", {"past_interviews": past_interviews})
+    except Exception as e:
+        print(f"Error fetching interviews: {e}")
+        return render(request, "dashboard.html", {"past_interviews": [], "error": str(e)})
 
 def interview_view(request):
     return render(request, 'interview.html')
@@ -395,21 +412,20 @@ from firebase_admin import firestore
 def evaluate_interview(request):
     if request.method == "POST":
         try:
-            # ✅ Parse JSON input
+            # Parse JSON input
             data = json.loads(request.body)
             print("Received JSON:", data)
 
             role = data.get("role")
             description = data.get("description")
+            experience = data.get("experience")  # Added experience field
 
-            print("Role Received:", role)  # Debugging
-            print("Description Received:", description)  # Debugging
+            print("Role Received:", role)
+            print("Description Received:", description)
 
             # Convert empty values to None
             role = None if not role or role.strip() == "" else role
             description = None if not description or description.strip() == "" else description
-
-
 
             answers = [a for a in data.get("answers", []) if a and isinstance(a, dict) and "answer" in a and a["answer"].strip()]
             if not answers:
@@ -418,7 +434,7 @@ def evaluate_interview(request):
             last_answer = answers[-1]["answer"]
             print("Evaluating:", last_answer)
 
-            # ✅ Generate evaluation using Gemini AI
+            # Generate evaluation using Gemini AI
             prompt = f"""
             You are an AI-based interview evaluator. Analyze the response carefully.
 
@@ -440,14 +456,16 @@ def evaluate_interview(request):
             raw_text = response.text.strip()
             print("Raw Gemini Response:", raw_text)
 
-            # ✅ Extract evaluation details
+            # Extract evaluation details
             evaluation_data = parse_gemini_response(raw_text)
             score = evaluation_data.get("score", "N/A")
 
-            # ✅ Store evaluation results in Firestore with correct role & description
+            # Store evaluation results in Firestore with user info
             interview_data = {
+                "user_email": request.user.email,  # Add user email
                 "role": role,  
-                "description": description,  
+                "description": description,
+                "experience": experience,  # Add experience
                 "score": score,
                 "timestamp": firestore.SERVER_TIMESTAMP
             }
@@ -458,29 +476,26 @@ def evaluate_interview(request):
             # Remove None values before storing
             interview_data = {k: v for k, v in interview_data.items() if v is not None}
 
-            interview_ref = db.collection("interviews").add(interview_data)
-
-
+            # Add to Firestore
+            doc_ref = db.collection("interviews").document()
+            doc_ref.set(interview_data)
             
-            # ✅ Store evaluation in Django session (including role & description)
+            # Store evaluation in Django session
             request.session["evaluation_data"] = {
-                "role": role,  # Store role in session
-                "description": description,  # Store description in session
+                "role": role,
+                "description": description,
                 "evaluation": evaluation_data.get("evaluation", "No data"),
                 "strengths": evaluation_data.get("strengths", "No data"),
                 "improvement": evaluation_data.get("improvement", "No data"),
                 "score": evaluation_data.get("score", "No data"),
             }
-            request.session.modified = True  # Ensure session is updated
-            print("✅ Storing Evaluation Data in Session:")
-            print(request.session["evaluation_data"])
-
+            request.session.modified = True
 
             return JsonResponse({
                 "success": True,
                 "message": "Evaluation completed!",
                 "evaluation": evaluation_data,
-                "interview_id": interview_ref[1].id  # Correct way to get the document ID
+                "interview_id": doc_ref.id
             }, status=200)
 
         except json.JSONDecodeError:
@@ -490,6 +505,61 @@ def evaluate_interview(request):
             return JsonResponse({"error": str(e)}, status=500)
 
     return JsonResponse({"error": "Invalid request method."}, status=405)
+
+# Add these new API endpoints
+@csrf_exempt
+def delete_interview(request, interview_id):
+    """Delete a specific interview by ID."""
+    if request.method == "DELETE":
+        try:
+            # Check if document exists
+            doc_ref = db.collection("interviews").document(interview_id)
+            doc = doc_ref.get()
+            
+            if not doc.exists:
+                return JsonResponse({"error": "Interview not found"}, status=404)
+                
+            # Verify the document belongs to the current user
+            doc_data = doc.to_dict()
+            if doc_data.get("user_email") != request.user.email:
+                return JsonResponse({"error": "Not authorized"}, status=403)
+                
+            # Delete the document
+            doc_ref.delete()
+            return JsonResponse({"message": "Interview deleted"}, status=200)
+            
+        except Exception as e:
+            print(f"Error deleting interview: {e}")
+            return JsonResponse({"error": str(e)}, status=500)
+            
+    return JsonResponse({"error": "Method not allowed"}, status=405)
+
+@csrf_exempt
+def delete_all_interviews(request):
+    """Delete all interviews for the current user."""
+    if request.method == "DELETE":
+        try:
+            # Get interviews for current user
+            query = db.collection("interviews").where("user_email", "==", request.user.email)
+            docs = query.stream()
+            
+            # Delete each document
+            delete_count = 0
+            for doc in docs:
+                doc.reference.delete()
+                delete_count += 1
+                
+            return JsonResponse({
+                "message": "All interviews deleted successfully", 
+                "count": delete_count
+            }, status=200)
+            
+        except Exception as e:
+            print(f"Error deleting interviews: {e}")
+            return JsonResponse({"error": str(e)}, status=500)
+            
+    return JsonResponse({"error": "Method not allowed"}, status=405)
+
 
 # 🔹 Improved Helper Function to Parse Gemini Response
 def parse_gemini_response(response_text):

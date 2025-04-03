@@ -1,6 +1,6 @@
 from django.contrib import admin
 from django.urls import path, include
-from app.views import get_past_interviews  # Import the view function
+from app.views import get_past_interviews,dashboard_view  # Import the view function
 
 urlpatterns = [
     # Admin panel
@@ -17,4 +17,5 @@ urlpatterns = [
 
     # ✅ Correct way to define the API endpoint
     path('api/get_past_interviews/', get_past_interviews, name='get_past_interviews'),
+    path("dashboard/", dashboard_view, name="dashboard")
 ]
