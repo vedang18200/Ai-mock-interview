@@ -23,6 +23,20 @@ import json
 import requests
 from django.core.exceptions import ObjectDoesNotExist
 # Load Gemini API key from settings
+#----------------------------------------------
+import os
+import json
+import firebase_admin
+from firebase_admin import credentials
+
+# Load JSON from environment variable
+cred_data = json.loads(os.getenv("FIREBASE_CREDENTIALS"))
+cred = credentials.Certificate(cred_data)
+firebase_admin.initialize_app(cred)
+#----------------------------------------------------
+
+
+
 
 from dotenv import load_dotenv
 import os
