@@ -55,8 +55,7 @@
 
 ### 📷 Preview
 
-> *(Add screenshots or GIF of: job form → interview page → result dashboard)*
-
+Screenshot 2025-08-15 160646.png
 ---
 
 ### 📌 How It Works
