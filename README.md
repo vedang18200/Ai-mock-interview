@@ -55,7 +55,7 @@
 
 ### 📷 Preview
 
-![Screenshot](Screenshot 2025-08-15 160646.png)
+![Screenshot](test.jpg)
 ---
 
 ### 📌 How It Works
